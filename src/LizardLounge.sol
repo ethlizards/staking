@@ -179,7 +179,6 @@ contract LizardLounge is ERC721, Ownable {
         uint256 totalDeposit =
             (_regularTokenIds.length * DEFAULTLIZARDSHARE) + (_genesisTokenIds.length * DEFAULTLIZARDSHARE * 2);
         overallShare += totalDeposit;
-        // console.log("overallShare after the first deposit:", overallShare);
     }
 
     /**
@@ -193,9 +192,7 @@ contract LizardLounge is ERC721, Ownable {
         // require(msg.sender == tx.origin, "No contract interactions");
 
         /// @dev We need to update the overall share values firsts to ensure the future rebases are accurate
-        // console.log("overall share right before withdraw;", overallShare);
         updateGlobalShares();
-        // console.log("overallshare right after;", overallShare);
         // Array of Locked Lizard tokenIds we transfer back to the staking contract
         /// @dev Loop for regular Ethlizard tokenIds
         for (uint256 i = 0; i < _regularTokenIds.length; i++) {
@@ -213,19 +210,13 @@ contract LizardLounge is ERC721, Ownable {
             // Remove the current raw share from the overall total
             uint256 regularShare = getCurrentShareRaw(_regularTokenIds[i]);
             overallShare = overallShare - regularShare;
-            // console.log("checking the regular share:", regularShare);
-            // console.log("checking the overall share after reg share minus;", overallShare);
 
             // Reset values
             timeLizardLocked[_regularTokenIds[i]] = 0;
-            // console.log("timelock reset works:", timeLizardLocked[_regularTokenIds[i]]);
             originalLockedLizardOwners[_regularTokenIds[i]] = address(0);
-            // console.log("originalLockedLizardOwners reset works:", originalLockedLizardOwners[_regularTokenIds[i]]);
             currentEthlizardStaked--;
 
             // Transfer the token
-            // console.log("owner of the tokenID:", ERC721.ownerOf(_regularTokenIds[i]));
-            // console.log("current address:", address(this));
             transferFrom(msg.sender, address(this), _regularTokenIds[i]);
         }
 
@@ -300,8 +291,9 @@ contract LizardLounge is ERC721, Ownable {
                 stakePoolClaims[_tokenIds[i]][_poolNumber] = true;
             }
         }
+
         // Transfer the user the USDC rewards
-        USDc.transferFrom(address(this), msg.sender, claimableRewards);
+        USDc.transfer(msg.sender, claimableRewards);
     }
 
     /// @dev Required implementation for a smart contract to receive ERC721 token
@@ -446,12 +438,10 @@ contract LizardLounge is ERC721, Ownable {
         // Case A: If there is only 1 pool, we do not need to factor into resets.
         // Case B: If the no pools have been created after the user is staked, we do not need to factor in resets.
         if ((pool.length == 0) || (pool[pool.length - 1].time) <= timeLizardLocked[_tokenId]) {
-            console.log("case a/b is running");
             currentShareRaw = calculateShareFromTime(block.timestamp, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
             return currentShareRaw;
         } // Case C: One or more pools created, but the user was staked before the creation of all of them.
         else if (timeLizardLocked[_tokenId] <= pool[0].time) {
-            console.log("case c is running");
             // Will always be the first pool because the the user is staked before creation of any pools
             currentShareRaw = calculateShareFromTime(pool[0].time, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
 
@@ -489,7 +479,6 @@ contract LizardLounge is ERC721, Ownable {
 
         // Finding the inflation between the current time and the last pool's reset's time.
         currentShareRaw = calculateShareFromTime(block.timestamp, pool[lastReset].time, currentShareRaw);
-        console.log("currentShareRaw:", currentShareRaw);
         return currentShareRaw;
     }
 
@@ -550,19 +539,23 @@ contract LizardLounge is ERC721, Ownable {
 
         // Case A: If there is only 1 pool, we do not need to factor into any resets
         if (_poolNumber == 1) {
+            console.log("class a");
             currentShareRaw =
                 calculateShareFromTime(pool[_poolNumber].time, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
             owedAmount = (currentShareRaw / pool[_poolNumber].currentGlobalShare) * pool[_poolNumber].value;
             return owedAmount;
         } // Case B: One or more pools created, but the user was staked before the creation of all of them.
         else if (timeLizardLocked[_tokenId] < pool[0].time) {
+            console.log("class b");
             // Second case runs if there has been at least 1 reset
             // and the user was staked before the first reset
             currentShareRaw = calculateShareFromTime(pool[0].time, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
+            console.log("current raw share", currentShareRaw);
             currPool = 1;
             prevPool = currPool - 1;
         } // Case C: User was staked between 2 pools
         else {
+            console.log("class c");
             // Iterate through the pools and set currPool to the next pool created after the user is staked.
             currPool = pool.length - 1;
             prevPool = currPool - 1;
@@ -584,9 +577,8 @@ contract LizardLounge is ERC721, Ownable {
             prevPool++;
             currPool++;
         }
-
         // Calculate the rewards the user can claim
-        owedAmount = (currentShareRaw / pool[_poolNumber].currentGlobalShare) * pool[_poolNumber].value;
+        owedAmount = (currentShareRaw * pool[_poolNumber].value) / pool[_poolNumber].currentGlobalShare;
         return owedAmount;
     }
 
