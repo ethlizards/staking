@@ -22,6 +22,7 @@ import "forge-std/Test.sol";
  * combined shares of all of the Ethlizards in order to calculate the specific percentage share of an Ethlizards.
  * Rebases refer to the daily interest that is applied to each Ethlizard.
  * Resets refer to when rewards are released into a pool for claim.
+ * Technical documentation can be found at docs.ethlizards.io
  */
 contract LizardLounge is ERC721, Ownable {
     IEthlizards public Ethlizards;
@@ -245,7 +246,6 @@ contract LizardLounge is ERC721, Ownable {
             // Transfer the token
             transferFrom(msg.sender, address(this), _genesisTokenIds[i]);
         }
-        // console.log("moves past the for loops");
 
         if (_regularTokenIds.length > 0) {
             Ethlizards.batchTransferFrom(address(this), msg.sender, _regularTokenIds);
@@ -437,7 +437,7 @@ contract LizardLounge is ERC721, Ownable {
 
         // Case A: If there is only 1 pool, we do not need to factor into resets.
         // Case B: If the no pools have been created after the user is staked, we do not need to factor in resets.
-        if ((pool.length == 0) || (pool[pool.length - 1].time) <= timeLizardLocked[_tokenId]) {
+        if ((pool.length == 0) || (pool[pool.length - 1].time) < timeLizardLocked[_tokenId]) {
             currentShareRaw = calculateShareFromTime(block.timestamp, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
             return currentShareRaw;
         } // Case C: One or more pools created, but the user was staked before the creation of all of them.
@@ -488,13 +488,10 @@ contract LizardLounge is ERC721, Ownable {
      * Reset of user's shares and inflation occurs after the values are pushed to the pool.
      */
     function createPool(uint256 _value) internal {
-        // console.log("Overall share before the first pool is made, which is same timestamp as creation", overallShare);
         updateGlobalShares();
-        // console.log("overall share after the first pool is made, should have no change", overallShare);
         pool.push(Pool(block.timestamp, _value, overallShare));
         currentRewards = 0;
         resetGlobalShares();
-        // console.log("overall share after the first reset , should have no change", overallShare);
     }
 
     /**
@@ -514,13 +511,11 @@ contract LizardLounge is ERC721, Ownable {
      */
     function updateGlobalShares() internal {
         uint256 requiredRebases = ((block.timestamp - lastGlobalUpdate) / 1 days);
-        // console.log("required rebases of the withdrawal update", requiredRebases);
         if (requiredRebases >= 1) {
             overallShare = ((overallShare * calculateRebasePercentage(requiredRebases)) / 1e18);
             rebaseCounter += requiredRebases;
             lastGlobalUpdate += requiredRebases * 1 days;
         }
-        console.log("overallShare:", overallShare);
     }
 
     /**
@@ -538,24 +533,20 @@ contract LizardLounge is ERC721, Ownable {
         uint256 prevPool;
 
         // Case A: If there is only 1 pool, we do not need to factor into any resets
-        if (_poolNumber == 1) {
-            console.log("class a");
+        if (_poolNumber == 0) {
             currentShareRaw =
                 calculateShareFromTime(pool[_poolNumber].time, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
-            owedAmount = (currentShareRaw / pool[_poolNumber].currentGlobalShare) * pool[_poolNumber].value;
+            owedAmount = (currentShareRaw * pool[_poolNumber].value) / pool[_poolNumber].currentGlobalShare;
             return owedAmount;
         } // Case B: One or more pools created, but the user was staked before the creation of all of them.
-        else if (timeLizardLocked[_tokenId] < pool[0].time) {
-            console.log("class b");
+        else if (timeLizardLocked[_tokenId] <= pool[0].time) {
             // Second case runs if there has been at least 1 reset
             // and the user was staked before the first reset
             currentShareRaw = calculateShareFromTime(pool[0].time, timeLizardLocked[_tokenId], DEFAULTLIZARDSHARE);
-            console.log("current raw share", currentShareRaw);
             currPool = 1;
             prevPool = currPool - 1;
         } // Case C: User was staked between 2 pools
         else {
-            console.log("class c");
             // Iterate through the pools and set currPool to the next pool created after the user is staked.
             currPool = pool.length - 1;
             prevPool = currPool - 1;
@@ -584,7 +575,6 @@ contract LizardLounge is ERC721, Ownable {
 
     /**
      * @notice Takes 2 different unix timestamps and returns the inflation-applied raw share of it.
-     * TODO: might need better param names here, kinda confusing
      */
     function calculateShareFromTime(uint256 _currentTime, uint256 _previousTime, uint256 _rawShare)
         internal
@@ -597,8 +587,10 @@ contract LizardLounge is ERC721, Ownable {
     }
 
     /**
-     * @notice We calculate the 1.005^_requiredRebases and
+     * @notice We calculate the 1.005^_requiredRebases via this function.
      * @dev See technical documents for how maths is calculated.
+     *  We apply log laws to a compound interest formula which allows us to calculate
+     *  values in big number form without overflow errors
      */
     function calculateRebasePercentage(uint256 _requiredRebases) internal view returns (uint256) {
         // Conversion of the uint256 rebases to int128 form
